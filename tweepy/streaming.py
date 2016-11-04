@@ -308,46 +308,19 @@ class Stream(object):
         buf = ReadBuffer(resp.raw, self.chunk_size, encoding=encoding)
 
         while self.running and not resp.raw.closed:
-            length = 0
-            while not resp.raw.closed:
-                line = buf.read_line().strip()
-                if not line:
-                    self.listener.keep_alive()  # keep-alive new lines are expected
-                elif line.isdigit():
-                    length = int(line)
-                    break
-                else:
-                    raise TweepError('Expecting length, unexpected value found')
-
-            next_status_obj = buf.read_len(length)
-            if self.running:
-                self._data(next_status_obj)
-
-            # # Note: keep-alive newlines might be inserted before each length value.
-            # # read until we get a digit...
-            # c = b'\n'
-            # for c in resp.iter_content(decode_unicode=True):
-            #     if c == b'\n':
-            #         continue
-            #     break
-            #
-            # delimited_string = c
-            #
-            # # read rest of delimiter length..
-            # d = b''
-            # for d in resp.iter_content(decode_unicode=True):
-            #     if d != b'\n':
-            #         delimited_string += d
-            #         continue
-            #     break
-            #
-            # # read the next twitter status object
-            # if delimited_string.decode('utf-8').strip().isdigit():
-            #     status_id = int(delimited_string)
-            #     next_status_obj = resp.raw.read(status_id)
-            #     if self.running:
-            #         self._data(next_status_obj.decode('utf-8'))
-
+            line = buf.read_line()
+            if line is None:  # read_line may return None if the stream was closed
+                break
+            line = line.strip()
+            if not line:  # empty keep-alive line
+                self.listener.keep_alive()
+                continue
+            if line.isdigit():
+                next_status_obj = buf.read_len(int(line))
+                if self.running and next_status_obj:
+                    self._data(next_status_obj)
+            else:
+                raise TweepError('Expecting length, unexpected value found')
 
         if resp.raw.closed:
             self.on_closed(resp)
